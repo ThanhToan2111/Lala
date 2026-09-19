@@ -29,7 +29,15 @@ input_images*/
 # OS files
 .DS_Store
 
+# Local credentials
+kaggle.json
+
+# Local datasets
+data/*.zip
+
 .vscode
 src/debug_main.py
 temp*.png
 /outputs
+mpc/
+mbhseg/
