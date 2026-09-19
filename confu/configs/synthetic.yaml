@@ -1,0 +1,26 @@
+# Stage 0 synthetic ground-truth defaults (see AGENT.md — ConFu++
+# Representation-Level Complementarity, section 5). The experiment is
+# launched via argparse flags; this file documents the canonical settings.
+config: A            # A: y = a XOR b (pure synergy); B: y = a (no synergy); C: mixture via rho
+s1: 0.0              # lambda_shortcut; 0 = baseline
+tau: 0.5             # hinge bandwidth: single-modality R^2 above 1 - tau is taxed
+k_adv: 1
+seeds: 5
+n_train: 50000
+n_test: 4000
+obs_dim: 64
+dim: 64
+rank: 32
+adv_hidden: 64
+noise: 1.0
+rho: 0.5
+epochs: 60
+lr: 0.001
+weight_decay: 0.01
+lambda_unimodal: 0.2
+lambda_variance: 1.0
+lambda_cross_covariance: 0.01
+lambda_covariance: 0.5
+lambda_utility: 0.2
+lambda_factorvar: 0.5
+adv_warmup_fraction: 0.2

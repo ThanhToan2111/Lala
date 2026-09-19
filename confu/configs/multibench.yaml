@@ -1,0 +1,31 @@
+defaults:
+  - dataset: mosi
+  - _self_
+
+samples_order: [0,1,2]
+weight_decay: 1e-4        # Default weight decay (can be overridden via Optuna)
+fusion_layers: 2          # Default number of fusion layers (can be overridden via Optuna
+mask_ratio: 0.0                # Default mask ratio (can be overridden via Optuna)
+lambda_: 0.5                # Default lambda (can be overridden via Optuna)
+scenario: confu
+fusion_hidden_dim: 512
+iteration: 1
+seed: 1
+results_on_test: true
+training:
+  lr: 5e-5              # Learning rate for the optimizer
+  batch_size: 128       # Batch size for training
+  num_workers: 10       # Number of workers for data loading
+  max_epochs: 30        # Maximum number of epochs for training
+
+results_path: ${hydra:runtime.cwd}/results/multibench
+log_path: ${hydra:runtime.cwd}/outputs/multibench
+probe_fastsearch: false
+probe_use_sklearn: false
+lambda_shortcut: 0.1
+shortcut_tau: 0.5
+k_adv: 1
+adv_lr_scale: 0.5
+adv_hidden: 256
+adv_warmup_fraction: 0.2
+lambda_task: 0.1

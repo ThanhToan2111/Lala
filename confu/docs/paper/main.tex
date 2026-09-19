@@ -1,0 +1,260 @@
+% ConFu++ paper draft — generated from the repository's real experimental record.
+% All numbers trace to EXPERIMENTS.md and results/ JSON artifacts.
+\documentclass[10pt,twocolumn]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{booktabs,graphicx,amsmath,amssymb,hyperref,multirow}
+\newcommand{\rIA}{r_{12}}
+\newcommand{\ra}{r_1}
+\newcommand{\rb}{r_2}
+\title{Alignment Is Not Dependence:\\Measuring and Reducing Unimodal Shortcuts in\\Higher-Order Multimodal Fusion}
+\author{Anonymous}
+\date{}
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Higher-order multimodal methods fuse representations of several modalities and align them
+contrastively, on the premise that fused representations capture information unavailable to any
+constituent modality. We show this premise is empirically unfounded. Across three established
+benchmarks (AV-MNIST, CMU-MOSI, UR-FUNNY), interaction representations that are active,
+predictive, high-rank, and permutation-sensitive are almost entirely predictable from a single
+modality (nonlinear predictability up to $R^2=0.989$). We formalize the resulting
+\emph{alignment--dependence gap} and introduce an operational diagnostic suite that separates
+fusion, dependence, and conditional utility. We then propose \textbf{S1}, a training-time
+adversarial de-shortcutting objective that penalizes predictability of each interaction from each
+single modality while leaving joint predictability unconstrained. S1 is the only objective among
+those studied that significantly reduces the measured shortcut (paired $p\approx0.011$, five
+seeds) at zero accuracy cost, and it fabricates no dependence on negative controls. On a new
+controlled synthetic benchmark with ground-truth third-order synergy, order-restricted models sit
+at chance while an order-matched interaction solves the task with perfectly balanced modality
+dependence ($+49.9$~pp, 5/5 seeds). Finally, on a newly released natural benchmark with genuine
+headroom (Bird-MML), the original higher-order objective captures none of the available
+complementarity ($+0.2$~pp of $+15.9$~pp available), while our utility+S1 stack recovers a
+significant share ($+5.8$~pp over baseline, paired $p<0.001$).
+We release the diagnostic suite, the synthetic benchmark, and all experimental logs.
+\end{abstract}
+
+\section{Introduction}
+Multimodal learning increasingly relies on fusing per-modality encodings into joint
+representations, aligned with contrastive objectives (CLIP-style and higher-order variants).
+The implicit claim: the fused representation \emph{integrates} the modalities. We ask a simpler
+question that the literature rarely answers directly --- does the fused representation actually
+\emph{depend} on all of its inputs?
+
+Our central finding is a repeatable negative: fused interactions can satisfy every surface health
+criterion (variance, effective rank, standalone probes, permutation sensitivity) while being a
+unimodal function. We make this precise with predictability probes: on AV-MNIST,
+$R^2(\ra\!\to\!\rIA)=0.989$ while $R^2(\rb\!\to\!\rIA)=0.031$.
+
+\textbf{Contributions.}
+(1) We formalize the alignment--dependence gap and release an operational diagnostic suite
+(\S\ref{sec:diagnostics}). (2) We audit three standard benchmarks and show their higher-order
+interactions are shortcut-dominated (\S\ref{sec:audit}). (3) We propose S1, an adversarial
+de-shortcutting objective with a hinged, joint-sparing penalty; it is the only tested objective
+that significantly reduces single-modality predictability at no accuracy cost, and it is honest
+on negative controls (\S\ref{sec:s1}). (4) We contribute a controlled synthetic order benchmark
+on which order-matched interactions are provably (empirically) necessary and sufficient, while
+order-restricted decompositions sit at chance (\S\ref{sec:orderbench}). (5) We document two
+methodology pitfalls: post-aggregation LayerNorm leaks higher-order signal, invalidating
+``low-order'' ablations; and online adversaries equilibrate far below converged probes (the
+\emph{adversary gap}) (\S\ref{sec:pitfalls}).
+
+\section{Related Work}
+% See docs/RELATED_WORK.md for the full annotated survey (verification pass pending).
+\paragraph{Contrastive multimodal alignment.} CLIP and its tri-modal extensions (Symile, TriCLIP,
+ImageBind) align embeddings pairwise or via total correlation. ConFu (our direct baseline) aligns
+fused pair representations with the remaining modality. None of these objectives constrains the
+\emph{content} of the fused representation.
+\paragraph{Modality dominance.} Multimodal networks overfit (Wang et al.), gradient rebalancing
+(OGM-GE and follow-ups), and underspecification (D'Amour et al.) address dominance at the
+loss/gradient level. We show why loss-level pressure cannot bootstrap dependence: corrupted and
+positive interactions coincide under a shortcut.
+\paragraph{Synergy and information decomposition.} PID (Williams--Beer) and MultiViz-style
+interaction auditing motivate our vocabulary; our metrics are operational approximations, not
+information-theoretic quantities.
+\paragraph{Adversarial representation control.} Domain-adversarial training and
+``learning-not-to-learn'' remove unwanted predictability. S1 differs in target: predictability of
+the \emph{interaction} from \emph{each constituent alone}, never from the pair jointly.
+
+\section{The Alignment--Dependence Gap}\label{sec:diagnostics}
+\textbf{Setup.} Encoders $E_i$ produce $r_i=E_i(X_i)$; a fusion module produces
+$\rIA=F(\ra,\rb)$. We distinguish four properties: \emph{active} (non-trivial variance),
+\emph{predictive} ($I(Y;\rIA)>0$), \emph{dependent} (performance degrades when either constituent
+is corrupted), and \emph{conditionally useful}
+($\mathrm{Perf}(\ra,\rb,\rIA)>\mathrm{Perf}(\ra,\rb)$). Only the combination of the last two
+earns the name \emph{complementary}.
+
+\textbf{Diagnostics.} (i) zero vs.\ shuffle interaction tests; (ii) per-modality corruption drops
+$D_1, D_2$ and the balance score $B_{12}=2\min(D_1,D_2)/(D_1+D_2)$; (iii) capacity-matched
+conditional linear and nonlinear probes; (iv) correction--regression counts against the
+lower-order model; (v) nonlinear predictability probes $q_1(\ra)\!\to\!\rIA$,
+$q_2(\rb)\!\to\!\rIA$, $q_{12}(\ra,\rb)\!\to\!\rIA$ with the shortcut criterion
+$R^2(q_1)\!\gg\!R^2(q_2)$ and $R^2(q_1)\!\approx\!R^2(q_{12})$.
+
+\section{Auditing Existing Benchmarks}\label{sec:audit}
+\begin{table}[h]\centering\small
+\caption{Five-seed audits. Interactions are healthy on the surface and shortcut underneath.}
+\begin{tabular}{lll}
+\toprule
+Benchmark & Surface health & True content \\
+\midrule
+AV-MNIST & rank ${\uparrow}$, shuffle-sensitive & $R^2(\ra{\to}\rIA){=}0.989$, audio drop $+0.004$ \\
+CMU-MOSI & text dominance & pair conditional gains $-0.96/-1.43/-2.27$~pp; $R^2\!\le\!0.953$ \\
+UR-FUNNY & high rank, sensitive & $R^2\!\approx\!0.97$; pair gains $-0.66/{+}0.19/{-}0.76$~pp \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Every audited benchmark fails either the dependence gate (a modality shuffle is free) or the
+utility gate (lower-order probes already saturate). These are \emph{data properties}; no training
+objective can create the missing information, and we log all failed attempts as negative results.
+
+\section{S1: Adversarial De-Shortcutting}\label{sec:s1}
+\textbf{Mechanism.} For each interaction $t=\mathrm{std}(\rIA)$ (EMA statistics, stop-grad),
+adversaries $q_1, q_2$ are trained to predict $t$ from $\ra$ alone and $\rb$ alone (alternating
+minimax, $k_{\mathrm{adv}}{=}1$). The generator pays the hinged penalty
+$\mathrm{ReLU}(\tau-\mathrm{MSE}(q_i(r_i), t))$, taxing single-modality $R^2$ above $1{-}\tau$
+without demanding noise. Joint predictability from $(\ra,\rb)$ is never penalized.
+Per-factor variance floors close the constant-factor escape route.
+
+\textbf{Results (AV-MNIST, five seeds, paired).} Accuracy $70.05{\pm}0.48$ vs.\ $69.96{\pm}0.59$
+(ablation, ns); $R^2(\ra{\to}\rIA)$: $0.989\to0.682$ ($t=-4.43$, $p\approx0.011$); audio
+dependence doubles ($+0.084\to+0.236$~pp, $p\approx0.059$). S1 is the first objective in this
+study to move single-modality predictability at all; utility-loss (P1) and ranking (P2) variants
+never did.
+
+\textbf{Honesty.} On synthetic no-synergy controls and on a distractor-modality control, S1
+fabricates nothing (drops $\approx0$; gate stays silent). On AV-MNIST the residual
+$R^2\approx0.68$ is an adversary gap (\S\ref{sec:pitfalls}), not hidden dependence.
+
+\section{The Controlled Order Benchmark}\label{sec:orderbench}
+Three (to six) modalities observe latent bits through fixed random prototypes plus Gaussian noise;
+labels are $y=\bigoplus_i x_i$ (order $M$) or $y=x_1{\oplus}x_2$ with distractors (control).
+Probes use held-out splits; five seeds per cell.
+
+\begin{table}[h]\centering\small
+\caption{Order-3 synergy ($y{=}a{\oplus}b{\oplus}c$): accuracy (5 seeds).}
+\begin{tabular}{lcc}
+\toprule
+Model & orders & accuracy \\
+\midrule
+Additive & 1 & $0.496\pm0.006$ \\
+Pairs-only & 1+2 & $0.501\pm0.010$ \\
+Concat-MLP & joint & $1.000\pm0.000$ \\
+\textbf{Full (order-matched)} & 1+2+3 & $\mathbf{1.000\pm0.000}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The $M$-ladder ($M{=}3..6$) confirms the pattern at every $M$ (order-restricted: chance;
+order-matched: $1.0000$; concat-MLP cracks at $M{=}6$, $0.9975$). The full model's dependence is
+maximally balanced (every single-modality shuffle costs ${\approx}0.5$ accuracy), and
+held-out probes of singles/pairs sit at chance. Notably, pair representations do contain the
+bits (concat probe 0.97) --- the order-2 failure is a \emph{readout} failure of sum aggregation,
+evidence that higher-order synergy requires order-matched interaction \emph{computation}, not
+merely rich features.
+
+\section{Bird-MML: A Natural Benchmark with Genuine Headroom}\label{sec:birdmml}
+Bird-MML (149 species; image, audio, text) is audited on frozen pretrained features with a fixed
+stratified split (71-species subset; the Zenodo release is missing one archive part --- all
+reported factors are identical across compared methods). The audit finds exactly one strong pair:
+image+text reaches $80.89\%$ vs.\ best single $64.95\%$ ($+15.94$~pp headroom), while audio
+carries nothing in speech-domain features.
+
+\begin{table}[h]\centering\small
+\caption{Bird-MML, five seeds paired. ConFu++ = utility objective + S1.}
+\begin{tabular}{lccc}
+\toprule
+ & ConFu (orig.) & ConFu+U & ConFu+U+S1 \\
+\midrule
+probe full acc (\%) & $76.90\pm0.65$ & $83.01\pm0.13$ & $82.66\pm0.37$ \\
+conditional gain (pp) & $+0.19$ & $+1.07$ & $+0.77$ \\
+$R^2(\mathrm{text}{\to}z_{13})$ & $0.59$ & $\mathbf{0.44}$ & $0.50$ \\
+audio shuffle drop (pp) & $+0.01$ & $+0.01$ & $+0.01$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The original objective leaves the available complementarity unused (full ${\approx}$ lower).
+ConFu++ recovers $+5.76{\pm}0.86$~pp over it (paired $t{=}14.91$, $p{<}0.001$), exceeding the
+raw-feature linear ceiling ($81.01\%$), while fabricating no dependence for the null modality.
+
+\paragraph{Fair-play controls.} (i) \textbf{Leakage control:} $33\%$ of released captions
+contain the species name; re-auditing with BLIP-only (name-free) captions reduces the headroom
+from $+15.9$ to $+4.8$~pp --- still positive, so genuine complementarity exists beyond leakage.
+(ii) \textbf{Attribution:} the accuracy gain comes from the utility objective (ConFu+U
+$83.01{\pm}0.13$ vs.\ +S1-only $76.58{\pm}0.51$); S1's role is representation quality, not
+score --- on the balanced pair, text-predictability of $z_{13}$ is lowest under the utility
+objective ($R^2$ $0.59{\to}0.44$) and S1 pins it to the hinge band ($0.50$ at $\tau{=}0.5$).
+(iii) \textbf{Same-topic baseline:} OGM-style gradient rebalancing on identical frozen features
+does not beat plain joint training ($80.68{\pm}0.38$ vs.\ $80.88{\pm}0.11$, paired
+$t{=}{-}1.16$, ns) and sits $1.8$~pp below ConFu++. (iv) \textbf{Hyperparameter robustness:}
+S1 is insensitive on ground-truth synergy (synthetic Config A: acc ${\approx}1.0$, balanced
+drops, for $\tau{\in}\{0.3,0.5,0.7\}$, $k_{adv}{\in}\{1,3\}$).
+
+\section{End-to-End Replication}\label{sec:e2e}
+To verify the frozen-feature findings transfer, we train encoders, fusion, and objectives jointly
+on the same subset (identical initialization, schedule, and inference capacity across arms; three
+seeds). Every arm converges to \textbf{text dominance} (text shuffle drop ${+}4.9$~pp, image
+${\approx}0$, audio $0$), because the released captions contain species names (33\%) and the
+task loss absorbs the leakage. Accuracy is statistically flat across arms (confu $71.87{\pm}0.16$,
++U $72.18{\pm}0.48$, +U+S1 $72.32{\pm}0.62$; paired $+0.45{\pm}0.49$~pp, ns), while the
+shortcut meters respond monotonically as designed: $R^2(\mathrm{text}{\to}z_{13})$ falls
+$0.81 \to 0.73 \to 0.68$ across confu $\to$ +U $\to$ +U+S1. End-to-end, the
+alignment--dependence gap manifests as \emph{modality abandonment} --- a stronger failure mode
+than the frozen-feature shortcut, and exactly what our diagnostics are built to expose.
+
+\section{Methodology Pitfalls}\label{sec:pitfalls}
+\textbf{Post-aggregation LayerNorm is a hidden higher-order term.} A final LayerNorm divides by a
+cross-modal statistic; additive models ending in LayerNorm reach $0.75$ on 3-bit parity (exactly
+$0.50$ without). ``Low-order'' ablations must use LN-free readouts.
+\textbf{The adversary gap.} An online adversary updated once per batch equilibrates at
+$R^2\approx0.3$--$0.4$ (below our hinge band) while a converged offline probe reads $0.84$;
+de-shortcutting claims must therefore be measured with converged probes, not training-time meters.
+
+\section{Discussion}
+The causal chain is now complete: where higher-order information is absent or dominated
+(AV-MNIST, MOSI, UR-FUNNY), interactions shortcut; where it is present and observable (synthetic
+order benchmark), order-matched interactions extract it completely and S1 neither breaks nor
+fabricates anything. The immediate future work is a natural benchmark with validated headroom
+(Bird-MML), where the same audit-then-de-shortcut pipeline applies unchanged.
+\textbf{Limitations.} S1's hinge tolerates redundancy by design ($\tau$); pair-conditional
+utility of individual interaction terms remains negative (utility arrives via the joint head);
+the Bird-MML subset uses frozen features (an end-to-end replication trains overnight at writing)
+and the audio channel is null under speech-domain features (an AudioSet-domain re-extraction is
+in progress); caption name leakage is documented ($33\%$) with a leakage-free control arm.
+All predictability statements are operational approximations.
+
+\section*{Reproducibility}
+Five seeds, paired statistics, capacity-matched probes, train-only parameter accounting,
+git-state logging per run, and public release of the diagnostic suite, synthetic benchmark,
+configs, and experiment logs.
+
+\bibliographystyle{plain}
+\begin{thebibliography}{9}\small
+\bibitem{confu} Koutoupis et al. The More, the Merrier: Contrastive Fusion for Higher-Order
+Multimodal Alignment. CVPR 2026 / arXiv:2511.21331.
+\bibitem{clip} Radford et al. Learning transferable visual models from natural language
+supervision. ICML 2021.
+\bibitem{symile} Meyer et al. Symile: A total correlation objective for multimodal contrastive
+learning. ICML 2024.
+\bibitem{imagebind} Girdhar et al. ImageBind: One embedding space to bind them all. CVPR 2023.
+\bibitem{multibench} Liang et al. MultiBench: Multiscale benchmarks for multimodal representation
+learning. NeurIPS 2021.
+\bibitem{multiviz} Liang et al. MultiViz: An analysis benchmark for multimodal interactions.
+2022.
+\bibitem{pid} Williams \& Beer. Nonnegative decomposition of multivariate information. 2010.
+\bibitem{wang2020} Wang et al. What makes training multi-modal classification networks hard?
+CVPR 2020.
+\bibitem{ogm} Peng et al. Balanced multimodal learning via on-the-fly gradient modulation. CVPR
+2022.
+\bibitem{underspec} D'Amour et al. Underspecification presents challenges for credibility in
+modern machine learning. JMLR 2022.
+\bibitem{dann} Ganin \& Lempitsky. Unsupervised domain adaptation by backpropagation. ICML 2015.
+\bibitem{learningnottoplearn} Kim et al. Learning not to learn: Training deep neural networks with
+biased data. CVPR 2019.
+\bibitem{vicreg} Bardes et al. VICReg: Variance-invariance-covariance regularization. ICLR 2022.
+\bibitem{lmf} Liu et al. Efficient low-rank multimodal fusion. ACL 2018.
+\bibitem{focal} Lin et al. Focal loss for dense object detection. ICCV 2017.
+\end{thebibliography}
+\end{document}
